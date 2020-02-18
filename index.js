@@ -2,7 +2,7 @@ var Tree = require('./lib/cypressIntellijTree')
   , util = require('./lib/cypressIntellijUtil')
   , treeUtil = require('./lib/cypressTreeUtil')
   , stringifier = require('./lib/cypress-intellij-stringifier')
-  , SingleElementQueue = require('./single-element-queue');
+  , SingleElementQueue = require('./lib/single-element-queue');
 
 /**
  * @param {Tree} tree
@@ -17,8 +17,8 @@ function findOrCreateAndRegisterSuiteNode(tree, test) {
     var suiteName = suite.title;
     var childNode = treeUtil.getNodeForSuite(suite);
     if (!childNode) {
-      var locationPath = getLocationPath(test.file, parentNode, suiteName);
-      childNode = parentNode.addTestSuiteChild(suiteName, 'suite', locationPath);
+      var locationPath = getLocationPath(parentNode, suiteName);
+      childNode = parentNode.addTestSuiteChild(suiteName, 'suite', locationPath, test.file);
       childNode.register();
       treeUtil.setNodeForSuite(suite, childNode);
     }
@@ -39,12 +39,11 @@ function getSuitesFromRootDownTo(suite) {
 }
 
 /**
- * @param {string} testFilePath test file path
  * @param {TestSuiteNode} parent
  * @param {string} childName
  * @returns {string}
  */
-function getLocationPath(testFilePath, parent, childName) {
+function getLocationPath(parent, childName) {
   var names = []
     , node = parent
     , root = node.tree.root;
@@ -52,7 +51,6 @@ function getLocationPath(testFilePath, parent, childName) {
     names.push(node.name);
     node = node.parent;
   }
-  names.push(testFilePath || '');
   names.reverse();
   names.push(childName);
   return util.joinList(names, 0, names.length, '.');
@@ -92,8 +90,8 @@ function registerTestNode(tree, test) {
     throw Error("Test node has already been associated!");
   }
   var suiteNode = findOrCreateAndRegisterSuiteNode(tree, test);
-  var locationPath = getLocationPath(test.file, suiteNode, test.title);
-  testNode = suiteNode.addTestChild(test.title, 'test', locationPath);
+  var locationPath = getLocationPath(suiteNode, test.title);
+  testNode = suiteNode.addTestChild(test.title, 'test', locationPath, test.file);
   testNode.register();
   treeUtil.setNodeForTest(test, testNode);
   return testNode;
@@ -144,6 +142,17 @@ function addStdErr(testNode, err) {
  */
 function finishTestNode(tree, test, err, finishingQueue) {
   var testNode = treeUtil.getNodeForTest(test);
+  if (finishingQueue != null) {
+    const passed = testNode != null && testNode === finishingQueue.current && testNode.outcome === Tree.TestOutcome.SUCCESS;
+    if (passed && err != null) {
+      // do not deliver passed event if this test is failed now
+      finishingQueue.clear();
+    }
+    else {
+      finishingQueue.processAll();
+    }
+  }
+
   if (testNode != null && testNode.isFinished()) {
     /* See https://youtrack.jetbrains.com/issue/WEB-10637
        A test can be reported as failed and passed at the same test run if a error is raised using
@@ -268,105 +277,100 @@ function finishSuite(suite) {
   suiteNode.finish(false);
 }
 
-function IntellijReporter(runner) {
-  var Base = util.requireBaseReporter();
-  if (Base != null) {
-    Base.call(this, runner);
-  }
+const BaseReporter = util.requireBaseReporter();
+if (BaseReporter) {
+  require('util').inherits(IntellijReporter, BaseReporter);
+}
 
-  var executeSafely = util.executeSafely;
+function IntellijReporter(runner) {
+  if (BaseReporter) {
+    BaseReporter.call(this, runner);
+  }
   var tree;
   // allows to postpone sending test finished event until 'afterEach' is done
   var finishingQueue = new SingleElementQueue(function (testNode) {
     testNode.finish(false);
   });
-
-  runner.on('start', function () {
-    executeSafely(function () {
-      tree = new Tree(function (str) {
-        util.writeToStdout(str);
-      });
-      tree.writeln('##teamcity[enteredTheMatrix]');
-
-      var tests = [];
-      treeUtil.forEachTest(runner, function (test) {
-        var match = true;
-        if (runner._grep instanceof RegExp) {
-          match = runner._grep.test(test.fullTitle());
-        }
-        if (match) {
-          tests.push(test);
-        }
-      });
-
-      tree.writeln('##teamcity[testCount count=\'' + tests.length + '\']');
-      tests.forEach(function (test) {
-        registerTestNode(tree, test);
-      });
+  let curId = undefined
+  runner.on('start', util.safeFn(function () {
+    if (tree && tree.nextId > 0) {
+      curId = tree.nextId
+    }
+    tree = new Tree(function (str) {
+      util.writeToStdout(str);
     });
-  });
+    if (curId) {
+      tree.nextId = curId
+    }
 
-  runner.on('suite', function (suite) {
-    executeSafely(function () {
-      var suiteNode = treeUtil.getNodeForSuite(suite);
-      if (suiteNode != null) {
-        suiteNode.start();
+    // tree.writeln('##teamcity[enteredTheMatrix]');
+    // tree.testingStarted();
+
+    var tests = [];
+    treeUtil.forEachTest(runner, function (test) {
+      var match = true;
+      if (runner._grep instanceof RegExp) {
+        match = runner._grep.test(test.fullTitle());
+      }
+      if (match) {
+        tests.push(test);
       }
     });
-  });
 
-  runner.on('test', function (test) {
-    executeSafely(function () {
-      finishingQueue.processAll();
-      startTest(tree, test);
+    tree.writeln('##teamcity[testCount count=\'' + tests.length + '\']');
+    tests.forEach(function (test) {
+      registerTestNode(tree, test);
     });
-  });
+  }));
 
-  runner.on('pending', function (test) {
-    executeSafely(function () {
-      finishingQueue.processAll();
-      finishTestNode(tree, test, null, finishingQueue);
-    });
-  });
+  runner.on('suite', util.safeFn(function (suite) {
+    var suiteNode = treeUtil.getNodeForSuite(suite);
+    if (suiteNode != null) {
+      suiteNode.start();
+    }
+  }));
 
-  runner.on('pass', function (test) {
-    executeSafely(function () {
-      finishingQueue.processAll();
-      finishTestNode(tree, test, null, finishingQueue);
-    });
-  });
+  runner.on('test', util.safeFn(function (test) {
+    finishingQueue.processAll();
+    startTest(tree, test);
+  }));
 
-  runner.on('fail', function (test, err) {
-    executeSafely(function () {
-      finishingQueue.processAll();
-      if (isBeforeEachHook(test)) {
-        handleBeforeEachHookFailure(tree, test, err);
-      }
-      else if (isBeforeAllHook(test)) {
-        finishTestNode(tree, test, err);
-        markChildrenFailed(tree, test.parent, test.title + " failed");
-      }
-      else {
-        finishTestNode(tree, test, err, finishingQueue);
-      }
-    });
-  });
+  runner.on('pending', util.safeFn(function (test) {
+    finishingQueue.processAll();
+    finishTestNode(tree, test, null, finishingQueue);
+  }));
 
-  runner.on('suite end', function (suite) {
-    executeSafely(function () {
-      finishingQueue.processAll();
-      if (!suite.root) {
-        finishSuite(suite);
-      }
-    });
-  });
+  runner.on('pass', util.safeFn(function (test) {
+    finishTestNode(tree, test, null, finishingQueue);
+  }));
 
-  runner.on('end', function () {
-    executeSafely(function () {
+  runner.on('fail', util.safeFn(function (test, err) {
+    if (isBeforeEachHook(test)) {
       finishingQueue.processAll();
-      tree = null;
-    });
-  });
+      handleBeforeEachHookFailure(tree, test, err);
+    }
+    else if (isBeforeAllHook(test)) {
+      finishingQueue.processAll();
+      finishTestNode(tree, test, err);
+      markChildrenFailed(tree, test.parent, test.title + " failed");
+    }
+    else {
+      finishTestNode(tree, test, err, finishingQueue);
+    }
+  }));
+
+  runner.on('suite end', util.safeFn(function (suite) {
+    finishingQueue.processAll();
+    if (!suite.root) {
+      finishSuite(suite);
+    }
+  }));
+
+  runner.on('end', util.safeFn(function () {
+    finishingQueue.processAll();
+    tree.testingFinished();
+    tree = null;
+  }));
 
 }
 
