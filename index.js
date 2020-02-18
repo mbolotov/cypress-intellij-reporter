@@ -1,7 +1,7 @@
-var Tree = require('./mochaIntellijTree')
-  , util = require('./mochaIntellijUtil')
-  , treeUtil = require('./mochaTreeUtil')
-  , stringifier = require('./mocha-intellij-stringifier')
+var Tree = require('./lib/cypressIntellijTree')
+  , util = require('./lib/cypressIntellijUtil')
+  , treeUtil = require('./lib/cypressTreeUtil')
+  , stringifier = require('./lib/cypress-intellij-stringifier')
   , SingleElementQueue = require('./single-element-queue');
 
 /**

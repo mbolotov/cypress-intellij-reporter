@@ -4,7 +4,7 @@
   "description": "Cypress internal reporter for WebStorm and other IntelliJ IDEs.",
   "repository": {
     "type": "git",
-    "url": "git@github.com:mbolotov/mocha-intellij.git"
+    "url": "git+ssh://git@github.com/mbolotov/cypress-intellij-reporter.git"
   },
   "keywords": [
     "cypress reporter",
@@ -12,14 +12,8 @@
     "IntelliJ"
   ],
   "contributors": [
-    {
-      "name": "Sergey Simonchik",
-      "email": "sergey.simonchik@jetbrains.com"
-    },
-    {
-      "name": "Mikhail Bolotov",
-      "email": "mikhail.bolotov@gmail.com"
-    }
+    "Sergey Simonchik <sergey.simonchik@jetbrains.com>",
+    "Mikhail Bolotov <mikhail.bolotov@gmail.com>"
   ],
   "dependencies": {
     "mocha": "latest"
@@ -30,5 +24,17 @@
       "url": "http://www.apache.org/licenses/LICENSE-2.0.html"
     }
   ],
-  "publishConfig": { "registry": "https://npm.pkg.github.com/" }
+  "bugs": {
+    "url": "https://github.com/mbolotov/cypress-intellij-reporter/issues"
+  },
+  "homepage": "https://github.com/mbolotov/cypress-intellij-reporter#readme",
+  "main": "index.js",
+  "directories": {
+    "lib": "lib"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "Apache-2.0"
 }
