@@ -310,15 +310,7 @@ function finishSuite(suite) {
   suiteNode.finish(false);
 }
 
-const BaseReporter = util.requireBaseReporter();
-if (BaseReporter) {
-  require('util').inherits(IntellijReporter, BaseReporter);
-}
-
 function IntellijReporter(runner) {
-  if (BaseReporter) {
-    BaseReporter.call(this, runner);
-  }
   var tree;
   // allows to postpone sending test finished event until 'afterEach' is done
   var finishingQueue = new SingleElementQueue(function (testNode) {
